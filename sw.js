@@ -1,5 +1,5 @@
 /* Rosée — service worker : mode hors-ligne complet */
-const CACHE = 'rosee-v1';
+const CACHE = 'rosee-v3';
 const ASSETS = [
   './', './index.html', './manifest.json', './icon.png',
   'https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Nunito:wght@400;600;700;800&display=swap',
