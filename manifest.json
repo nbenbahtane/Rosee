@@ -1,0 +1,13 @@
+{
+  "name": "Rosée · Mes finances",
+  "short_name": "Rosée",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FFF6F8",
+  "theme_color": "#FFF6F8",
+  "icons": [
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon.png", "sizes": "192x192", "type": "image/png" }
+  ]
+}
