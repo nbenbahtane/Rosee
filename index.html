@@ -198,6 +198,15 @@ html[data-theme=nuit] #lock .pad button{background:rgba(255,255,255,.08); color:
 .sw{width:48px; height:28px; border-radius:999px; background:var(--rose-soft); position:relative; cursor:pointer; transition:.2s; flex-shrink:0}
 .sw::after{content:""; position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%; background:#fff; transition:.2s; box-shadow:0 2px 6px rgba(0,0,0,.15)}
 .sw.on{background:var(--rose)} .sw.on::after{left:23px}
+
+#onboard{position:fixed; inset:0; z-index:400; background:var(--bg); display:none; overflow-y:auto; -webkit-overflow-scrolling:touch}
+#onboard .inner{max-width:520px; margin:0 auto; padding:calc(30px + env(safe-area-inset-top)) 20px calc(60px + env(safe-area-inset-bottom))}
+#onboard .steps{display:flex; gap:6px; margin-bottom:22px}
+#onboard .steps i{flex:1; height:6px; border-radius:99px; background:var(--rose-soft)}
+#onboard .steps i.on{background:linear-gradient(90deg,var(--rose),var(--lilas))}
+#onboard h1{font-size:26px; margin-bottom:6px}
+#onboard .sub{font-size:13.5px; color:var(--ink2); font-weight:700; margin-bottom:18px}
+.chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px}
 </style>
 </head>
 <body>
@@ -244,15 +253,22 @@ html[data-theme=nuit] #lock .pad button{background:rgba(255,255,255,.08); color:
       </div>
     </div>
     <div class="card" id="ops-list"></div>
-    <div class="section-title"><h2>Charges fixes récurrentes</h2><small onclick="openFixed()">+ ajouter</small></div>
-    <div class="card" id="fixed-list"></div>
   </div>
 
   <!-- ═══════════ BUDGETS ═══════════ -->
   <div class="view" id="v-budgets">
     <div class="section-title"><h2>Budgets & prévisions</h2><small onclick="openCatEdit()">catégories</small></div>
     <div class="kpi" id="b-kpi"></div>
-    <div class="card" id="b-gauges"></div>
+    <div class="card tight"><div class="seg" id="bud-seg">
+      <button class="on" data-s="var">🎯 Variables</button><button data-s="fix">🔁 Charges fixes</button></div></div>
+    <div id="bud-var">
+      <div class="card" id="b-donut"></div>
+      <div class="card" id="b-gauges"></div>
+      <div class="card" id="b-hist"></div>
+    </div>
+    <div id="bud-fix" style="display:none">
+      <div class="card" id="fixed-list"></div>
+    </div>
     <div class="card">
       <h3 style="font-size:16px">Clôture du mois 🎀</h3>
       <p style="font-size:13px;color:var(--ink2);font-weight:600;margin:6px 0 10px">Si tous les budgets variables sont tenus, tu débloques <b>+5% de budget plaisir</b> le mois suivant.</p>
@@ -292,6 +308,8 @@ html[data-theme=nuit] #lock .pad button{background:rgba(255,255,255,.08); color:
       <div class="toggle">👁️ Mode discret (montants floutés) <span class="sw" id="sw-blur" onclick="toggleBlur()"></span></div>
       <div class="toggle">🌰 Arrondi malin (chaque dépense arrondie à l'euro, la différence part dans « Petites graines ») <span class="sw" id="sw-round" onclick="toggleRoundup()"></span></div>
       <div class="toggle">🔐 Code PIN à l'ouverture <span class="sw" id="sw-pin" onclick="togglePin()"></span></div>
+      <label class="f">Mon prénom</label>
+      <input id="set-name" placeholder="Prénom" onchange="S.profile.name=this.value.trim();save();render()">
       <label class="f">Mon taux horaire net (€/h) — pour la wishlist</label>
       <input type="number" id="set-rate" step="0.5" onchange="setRate(this.value)">
       <div class="list-actions">
@@ -302,6 +320,7 @@ html[data-theme=nuit] #lock .pad button{background:rgba(255,255,255,.08); color:
         <input type="file" id="import-file" accept=".json" style="display:none" onchange="importJson(this)">
       </div>
       <p style="font-size:12px;color:var(--ink2);font-weight:600;margin-top:10px">💡 Astuce : enregistre la sauvegarde .json dans iCloud Drive (ton forfait 2 To) pour ne jamais perdre tes données.</p>
+      <button class="btn small ghost" style="margin-top:10px" onclick="startOnboard()">🌸 Relancer l'assistant de démarrage</button>
       <button class="btn small danger" style="margin-top:10px" onclick="resetAll()">Tout réinitialiser</button>
     </div>
   </div>
@@ -317,6 +336,7 @@ html[data-theme=nuit] #lock .pad button{background:rgba(255,255,255,.08); color:
 </nav>
 
 <div class="modal-bg" id="modal-bg"><div class="modal" id="modal"></div></div>
+<div id="onboard"><div class="inner" id="ob-inner"></div></div>
 <div id="lock">
   <div style="font-size:44px">🌸</div>
   <h2 style="font-size:22px">Rosée est verrouillée</h2>
@@ -327,34 +347,22 @@ html[data-theme=nuit] #lock .pad button{background:rgba(255,255,255,.08); color:
 <script>
 /* ═════════════════════════ ÉTAT & PERSISTANCE ═════════════════════════ */
 const KEY='rosee_v1';
-const FIX_SEED = [
-  {n:'Loyer',a:750.00,b:'b2',c:'c_loyer',d:2},{n:'Élec + Gaz',a:80.00,b:'b2',c:'c_energie',d:3},
-  {n:'Assurance + Prévoyance',a:24.87,b:'b1',c:'c_assur',d:3},{n:'Wifi + TV',a:59.99,b:'b2',c:'c_net',d:3},
-  {n:'Transport',a:90.80,b:'b2',c:'c_transp',d:3},{n:'Frais bancaires',a:8.65,b:'b1',c:'c_frais',d:3},
-  {n:'Téléphone',a:20.99,b:'b2',c:'c_tel',d:3},{n:'Crédit',a:171.88,b:'b1',c:'c_credit',d:4,end:'2026-11'},
-  {n:'Aide maman',a:150.00,b:'b1',c:'c_famille',d:2},{n:'Tél maman',a:10.99,b:'b2',c:'c_tel',d:3},
-  {n:'iCloud+',a:13.00,b:'b2',c:'c_abo',d:3},{n:'Spotify',a:11.12,b:'b2',c:'c_abo',d:3},
-  {n:'Claude IA',a:22.00,b:'b2',c:'c_abo',d:3},
-];
-const ENV_SEED = [
-  {n:'Courses',i:'🛒',m:150},{n:'Voyage',i:'✈️',m:120},{n:'Shopping',i:'🛍️',m:100},
-  {n:'Resto / activités',i:'🍽️',m:100},{n:'Cadeaux',i:'🎁',m:50},{n:'Dons',i:'🤲',m:40},
-];
 const BANK_PALETTE = [['#F58BB0','#EE6FA8'],['#C6A9F2','#A98BE8'],['#7FD8BE','#4FC39E'],['#FFB98A','#FF9E6D'],['#F5CE6E','#E8B84B'],['#8FC7F2','#5FA8E8'],['#F2A1C2','#E87DAB']];
 const DEFAULTS = () => ({
-  version:3,
-  profile:{rate:12, plaisirCatId:'c_shopping', securityTarget:5000, livretRate:1.7, ctoRate:6, freedTo:'b5',
-    theme:'rose', blur:false, roundup:false, pin:null},
+  version:4,
+  profile:{name:'', rate:12, plaisirCatId:'c_shopping', securityTarget:0, livretRate:1.7, ctoRate:6,
+    projSave:null, projCto:null, theme:'rose', blur:false, roundup:false, pin:null, onboarded:false},
   banks:[
-    {id:'b1', name:'BNP · Revenus & Fixe',       icon:'🏦', g:BANK_PALETTE[0]},
-    {id:'b2', name:'Bourso · Quotidien',          icon:'🧾', g:BANK_PALETTE[1]},
-    {id:'b3', name:'Trade Republic · CTO',        icon:'📈', g:BANK_PALETTE[2]},
-    {id:'b4', name:'Revolut · Variables',         icon:'🛍️', g:BANK_PALETTE[3]},
-    {id:'b5', name:'Livret A · Épargne',          icon:'🌱', g:BANK_PALETTE[4]},
+    {id:'b1', name:'Revenus & Fixe',     icon:'🏦', g:BANK_PALETTE[0]},
+    {id:'b2', name:'Quotidien',          icon:'🧾', g:BANK_PALETTE[1]},
+    {id:'b3', name:'Investissement',     icon:'📈', g:BANK_PALETTE[2]},
+    {id:'b4', name:'Dépenses variables', icon:'🛍️', g:BANK_PALETTE[3]},
+    {id:'b5', name:'Épargne',            icon:'🌱', g:BANK_PALETTE[4]},
   ],
   initBal:{b1:0,b2:0,b3:0,b4:0,b5:0},
   cats:[
     {id:'c_salaire', name:'Salaire',        icon:'💼', kind:'rev'},
+    {id:'c_revautre',name:'Autres revenus', icon:'💫', kind:'rev'},
     {id:'c_loyer',   name:'Loyer',          icon:'🏠', kind:'fix'},
     {id:'c_energie', name:'Élec & Gaz',     icon:'⚡', kind:'fix'},
     {id:'c_net',     name:'Wifi & TV',      icon:'📶', kind:'fix'},
@@ -365,61 +373,30 @@ const DEFAULTS = () => ({
     {id:'c_assur',   name:'Assurances',     icon:'🛡️', kind:'fix'},
     {id:'c_famille', name:'Famille',        icon:'👩‍👧', kind:'fix'},
     {id:'c_abo',     name:'Abonnements',    icon:'📺', kind:'fix'},
-    {id:'c_courses', name:'Courses',        icon:'🛒', kind:'var', budget:150},
-    {id:'c_resto',   name:'Resto / activités', icon:'🍽️', kind:'var', budget:100},
-    {id:'c_shopping',name:'Shopping',       icon:'🛍️', kind:'var', budget:100},
-    {id:'c_cadeaux', name:'Cadeaux',        icon:'🎁', kind:'var', budget:50},
-    {id:'c_dons',    name:'Dons',           icon:'🤲', kind:'var', budget:40},
+    {id:'c_courses', name:'Courses',        icon:'🛒', kind:'var', budget:0},
+    {id:'c_resto',   name:'Resto / activités', icon:'🍽️', kind:'var', budget:0},
+    {id:'c_shopping',name:'Shopping',       icon:'🛍️', kind:'var', budget:0},
+    {id:'c_cadeaux', name:'Cadeaux',        icon:'🎁', kind:'var', budget:0},
+    {id:'c_dons',    name:'Dons',           icon:'🤲', kind:'var', budget:0},
     {id:'c_beaute',  name:'Beauté & soin',  icon:'💅', kind:'var', budget:0},
     {id:'c_autre',   name:'Autre',          icon:'✨', kind:'var', budget:0},
   ],
   tx:[], fixed:[], credits:[], envs:[], cto:[], etf:[], assets:[], wishlist:[], goals:[],
   months:{}, rewardUnlocked:0, rewardSpent:0,
-  dispatch:{salary:3060, salaryBank:'b1', applied:[],
-    flows:[{from:'b1',to:'b5',amount:800,label:'Épargne Livret A'},
-           {from:'b1',to:'b2',amount:1785,label:'Budget du mois'},
-           {from:'b2',to:'b3',amount:150,label:'Investissement CTO'},
-           {from:'b2',to:'b4',amount:560,label:'Dépenses variables'}]},
+  dispatch:{salary:0, salaryBank:'b1', applied:[], flows:[]},
   zakat:{goldPrice:65, include:null},
 });
-function seedFixed(S){
-  for(const f of FIX_SEED) if(!S.fixed.some(x=>x.name===f.n))
-    S.fixed.push({id:uid(),name:f.n,amount:f.a,bankId:f.b,catId:f.c,day:f.d,end:f.end||null,applied:[],active:true});
-}
-function seedEnvs(S){
-  for(const e of ENV_SEED) if(!S.envs.some(x=>x.name===e.n))
-    S.envs.push({id:uid(),name:e.n,icon:e.i,target:0,saved:0,monthly:e.m,reward:false});
-}
 function monthsUntil(endMk){ const [y,m]=endMk.split('-').map(Number); const n=new Date(); return Math.max(0,(y-n.getFullYear())*12+(m-1-n.getMonth())+1); }
-function migrate(S){
-  if(S.version>=2) return migrateV3(S);
+function migrate(S){ // anciennes versions → v4 : structure complétée, données existantes conservées
   const D=DEFAULTS();
-  // banques : renommage réel + Livret A
-  const names={b1:D.banks[0],b2:D.banks[1],b3:D.banks[2],b4:D.banks[3]};
-  S.banks=(S.banks||[]).map(b=>names[b.id]?Object.assign({},b,{name:names[b.id].name,icon:names[b.id].icon}):b);
-  if(!S.banks.some(b=>b.id==='b5')) S.banks.push(D.banks[4]);
-  S.initBal=Object.assign({b5:0},S.initBal||{});
-  // catégories manquantes (bug config)
-  for(const c of D.cats) if(!(S.cats||[]).some(x=>x.id===c.id)) S.cats.push(c);
-  const bud={c_courses:150,c_shopping:100,c_cadeaux:50,c_dons:40};
-  for(const [k,v] of Object.entries(bud)){ const c=(S.cats||[]).find(x=>x.id===k); if(c&&!c._user) c.budget=v; }
-  S.etf=S.etf||[]; S.dispatch=S.dispatch||D.dispatch;
+  if(!(S.banks||[]).some(b=>b.id==='b5')) S.banks=(S.banks||D.banks).concat([D.banks[4]]);
+  S.initBal=Object.assign({b1:0,b2:0,b3:0,b4:0,b5:0},S.initBal||{});
+  S.cats=S.cats||D.cats;
+  for(const c of D.cats) if(!S.cats.some(x=>x.id===c.id)) S.cats.push(c);
+  S.etf=S.etf||[]; S.dispatch=Object.assign({},D.dispatch,S.dispatch||{});
   S.profile=Object.assign({},D.profile,S.profile||{});
-  seedFixed(S); seedEnvs(S);
-  if(!S.credits.some(c=>c.name==='Crédit')){ const r=monthsUntil('2026-11');
-    S.credits.push({id:uid(),name:'Crédit',monthly:171.88,total:r,remaining:r,bankId:'b1'}); }
-  if(S.zakat&&S.zakat.include&&!S.zakat.include.includes('bk_b5')) S.zakat.include.push('bk_b5');
-  S.version=2; return migrateV3(S);
-}
-function migrateV3(S){
-  if(S.version<3){ S.profile=Object.assign({theme:'rose',blur:false,roundup:false,pin:null},S.profile); S.version=3; }
-  return ensureSeeds(S);
-}
-function ensureSeeds(S){ // amorçage idempotent : vaut pour les installations fraîches comme pour les migrations
-  seedFixed(S); seedEnvs(S);
-  if(!S.credits.some(c=>c.name==='Crédit')){ const r=monthsUntil('2026-11');
-    if(r>0) S.credits.push({id:uid(),name:'Crédit',monthly:171.88,total:r,remaining:r,bankId:'b1'}); }
-  return S;
+  if(S.version&&S.version<4&&(S.tx||[]).length) S.profile.onboarded=true; // utilisateur existant : pas d'assistant
+  S.version=4; return S;
 }
 function load(){ try{ const d=JSON.parse(localStorage.getItem(KEY)); return d? Object.assign(DEFAULTS(),d):DEFAULTS(); }catch(e){ return DEFAULTS(); } }
 function save(){ localStorage.setItem(KEY, JSON.stringify(S)); }
@@ -427,7 +404,7 @@ const uid = () => Math.random().toString(36).slice(2,9);
 const fmt = n => (n<0?'-':'')+Math.abs(n).toLocaleString('fr-FR',{minimumFractionDigits:0,maximumFractionDigits:2})+' €';
 const todayISO = () => new Date().toISOString().slice(0,10);
 const monthKey = (d=new Date()) => d.toISOString().slice(0,7);
-let S = migrateV3(migrate(load()));
+let S = migrate(load());
 save();
 const bank = id => S.banks.find(b=>b.id===id)||{name:'?',icon:'🏦',g:['#ccc','#bbb']};
 const cat  = id => S.cats.find(c=>c.id===id)||{name:'Autre',icon:'✨',kind:'var'};
@@ -511,6 +488,13 @@ function go(v){
   render(); window.scrollTo({top:0});
 }
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.v));
+document.getElementById('bud-seg').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  budSeg=b.dataset.s;
+  document.getElementById('bud-seg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+  document.getElementById('bud-var').style.display=budSeg==='var'?'':'none';
+  document.getElementById('bud-fix').style.display=budSeg==='fix'?'':'none';
+});
+let budSeg='var';
 document.getElementById('ops-filter').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   opsFilter=b.dataset.f;
   document.getElementById('ops-filter').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
@@ -534,7 +518,7 @@ function txRow(t){
   return `<div class="tx">
     <div class="ico" style="background:${neg?'#FBEDF4':'var(--menthe-soft)'}">${c.icon}</div>
     <div class="meta"><div class="t1">${t.note||c.name}</div>
-    <div class="t2">${c.name} · ${bank(t.bankId).icon} ${bank(t.bankId).name} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}${t.auto?' · 🤖 auto':''}</div></div>
+    <div class="t2">${c.name} · ${bank(t.bankId).icon} ${bank(t.bankId).name} · ${new Date(t.date).toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}${t.auto?' · 🤖 auto':''}${t.mood?' · '+({need:'😊',joy:'💖',regret:'😔'})[t.mood]:''}</div></div>
     <div class="amt ${neg?'neg':'pos'}">${neg?'−':'+'} ${fmt(t.amount)}</div>
     <button class="close" style="float:none" onclick="delTx('${t.id}')">✕</button></div>`;
 }
@@ -553,12 +537,13 @@ function gaugeHTML(c){
 /* ── ACCUEIL ── */
 function renderHome(){
   const now=new Date();
-  document.getElementById('today-label').textContent = now.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
+  document.getElementById('today-label').textContent = now.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'}) + (S.profile.name?` · Bonjour ${S.profile.name} 🌸`:'');
   const r=resteAVivre();
   document.getElementById('h-rav').textContent=fmt(r.remainBudget);
   document.getElementById('h-rav-day').textContent=`soit ${fmt(Math.max(0,r.perDay))} / jour pendant encore ${r.daysLeft} jour${r.daysLeft>1?'s':''}`;
   const gPace=paceInfo(r.spent, r.budgets);
-  document.getElementById('h-pace').innerHTML=`<span class="pill ${gPace.cls}">${gPace.label}</span>`;
+  const meteo=gPace.cls==='ok'?'☀️':gPace.cls==='warn'?'🌤️':'🌧️';
+  document.getElementById('h-pace').innerHTML=`<span class="pill ${gPace.cls}">${meteo} ${gPace.label}</span>`;
   document.getElementById('h-banks').innerHTML=S.banks.map(b=>
     `<div class="bank" style="background:linear-gradient(135deg,${b.g[0]},${b.g[1]})" onclick="openBankDetail('${b.id}')">
      <div class="chip"></div><div class="icon">${b.icon}</div><div class="name">${b.name}</div><div class="bal">${fmt(balance(b.id))}</div></div>`).join('');
@@ -569,9 +554,12 @@ function renderHome(){
   document.getElementById('h-insights').innerHTML=insights().slice(0,3).map(i=>`<div class="insight"><span class="em">${i.em}</span><span>${i.txt}</span></div>`).join('');
   renderGarden();
   const mkNow=monthKey(), paid=(S.dispatch.applied||[]).includes(mkNow);
+  const nf=S.dispatch.flows.length, ne=S.envs.filter(e=>!e.reward&&e.monthly>0).length;
   document.getElementById('h-pay').innerHTML = paid
     ? `<div class="paycard"><b>💼 Salaire du mois dispatché ✓</b><p style="font-size:12.5px;font-weight:700;color:var(--ink2);margin-top:2px">Flux, charges et enveloppes sont en place pour ${new Date().toLocaleDateString('fr-FR',{month:'long'})}.</p></div>`
-    : `<div class="paycard"><b>💼 Jour de paie ?</b><p style="font-size:12.5px;font-weight:700;color:var(--ink2);margin:2px 0 10px">Salaire ${fmt(S.dispatch.salary)} sur ${bank(S.dispatch.salaryBank).name} → 4 flux + 6 enveloppes, en un geste.</p><button class="btn primary" onclick="openDispatch()">J'ai reçu mon salaire ✨</button></div>`;
+    : (S.dispatch.salary>0||nf>0)
+    ? `<div class="paycard"><b>💼 Jour de paie ?</b><p style="font-size:12.5px;font-weight:700;color:var(--ink2);margin:2px 0 10px">Un geste : salaire sur ${bank(S.dispatch.salaryBank).name}${nf?` → ${nf} flux`:''}${ne?` + ${ne} enveloppe${ne>1?'s':''}`:''}.</p><button class="btn primary" onclick="openDispatch()">J'ai reçu mon salaire ✨</button></div>`
+    : `<div class="paycard"><b>💼 Automatise ton jour de paie</b><p style="font-size:12.5px;font-weight:700;color:var(--ink2);margin:2px 0 10px">Configure une fois tes flux entre banques et la ventilation de tes enveloppes : ensuite, tout se fera en un geste.</p><button class="btn primary" onclick="editDispatch()">⚙️ Configurer mon dispatch</button></div>`;
   const prev=S.months[prevMonthKey()];
   document.getElementById('h-bonus').innerHTML = prev&&prev.kept ? `<div class="card" style="background:linear-gradient(135deg,#DDF5EC,#EDE4FB)"><b>🎀 Bonus actif ce mois-ci !</b><p style="font-size:13px;font-weight:700;color:var(--ink2)">Budgets tenus le mois dernier → +5% sur ta catégorie plaisir.</p></div>`:'';
 }
@@ -583,25 +571,86 @@ function renderOps(){
   const q=(document.getElementById('ops-search')?.value||'').trim().toLowerCase();
   if(q) list=list.filter(t=>(t.note||'').toLowerCase().includes(q)||cat(t.catId||'').name.toLowerCase().includes(q)||bank(t.bankId).name.toLowerCase().includes(q));
   document.getElementById('ops-list').innerHTML=list.slice(0,80).map(txRow).join('')||'<div class="empty"><span class="e">🧾</span>Rien ici pour le moment</div>';
-  document.getElementById('fixed-list').innerHTML=S.fixed.map(f=>`
-    <div class="tx"><div class="ico" style="background:#FBEDF4">${cat(f.catId).icon}</div>
-    <div class="meta"><div class="t1">${f.name}</div><div class="t2">le ${f.day} du mois · ${bank(f.bankId).name} · ${f.active?'active 🌿':'en pause 💤'}</div></div>
-    <div class="amt neg">− ${fmt(f.amount)}</div>
-    <button class="close" style="float:none" onclick="toggleFixed('${f.id}')">${f.active?'⏸':'▶️'}</button>
-    <button class="close" style="float:none" onclick="delFixed('${f.id}')">✕</button></div>`).join('')
-    ||'<div class="empty"><span class="e">🔁</span>Ajoute tes charges fixes : elles seront comptabilisées automatiquement chaque mois</div>';
 }
 function toggleFixed(id){ const f=S.fixed.find(x=>x.id===id); f.active=!f.active; save(); renderOps(); }
 function delFixed(id){ if(!confirm('Supprimer cette charge fixe ?'))return; S.fixed=S.fixed.filter(x=>x.id!==id); save(); renderOps(); }
 
 /* ── BUDGETS ── */
+const CAT_COLORS=['#EE6FA8','#A98BE8','#4FC39E','#FF9E6D','#E8B84B','#5FA8E8','#F2708A','#8FD0E8','#C9A7F5','#7FD8BE'];
+function donutSVG(entries,total){ // entries: [label,value,color]
+  let acc=0;
+  return entries.map(([l,v,col])=>{
+    const f=total>0?v/total:0, a0=acc*2*Math.PI-Math.PI/2; acc+=f; const a1=acc*2*Math.PI-Math.PI/2;
+    if(f<=0) return '';
+    const x0=50+36*Math.cos(a0),y0=50+36*Math.sin(a0),x1=50+36*Math.cos(a1),y1=50+36*Math.sin(a1);
+    return `<path d="M ${x0} ${y0} A 36 36 0 ${f>0.5?1:0} 1 ${x1} ${y1}" fill="none" stroke="${col}" stroke-width="15" stroke-linecap="butt"/>`;
+  }).join('');
+}
+function renderCatDonut(){
+  const cats=S.cats.filter(c=>c.kind==='var').map((c,i)=>[c,spentByCat(c.id),CAT_COLORS[i%CAT_COLORS.length]]).filter(x=>x[1]>0);
+  const tot=cats.reduce((s,x)=>s+x[1],0);
+  const box=document.getElementById('b-donut');
+  if(!tot){ box.innerHTML='<div class="empty"><span class="e">🍩</span>Le donut de tes dépenses apparaîtra ici</div>'; return; }
+  box.innerHTML=`<div style="display:flex;align-items:center;gap:16px">
+    <svg viewBox="0 0 100 100" style="width:110px;flex-shrink:0">${donutSVG(cats.map(([c,v,col])=>[c.name,v,col]),tot)}
+      <text x="50" y="47" text-anchor="middle" style="font:800 10px Nunito" fill="var(--ink2)">total</text>
+      <text x="50" y="60" text-anchor="middle" style="font:700 12px Fraunces" fill="var(--ink)">${Math.round(tot)} €</text></svg>
+    <div class="legend" style="flex-direction:column;align-items:flex-start;gap:5px">
+      ${cats.sort((a,b)=>b[1]-a[1]).slice(0,6).map(([c,v,col])=>`<span><i style="background:${col}"></i>${c.icon} ${c.name} · ${fmt(v)} (${Math.round(v/tot*100)}%)</span>`).join('')}
+    </div></div>`;
+}
+function renderHist(){
+  const bars=[]; const now=new Date();
+  for(let i=5;i>=0;i--){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); const mk=d.toISOString().slice(0,7);
+    const v=txMonth(mk).filter(t=>t.type==='dep'&&cat(t.catId).kind!=='fix').reduce((s,t)=>s+t.amount,0);
+    bars.push({mk,v,label:d.toLocaleDateString('fr-FR',{month:'short'}),cur:i===0}); }
+  const max=Math.max(...bars.map(b=>b.v),1);
+  document.getElementById('b-hist').innerHTML=`<h3 style="font-size:15px;margin-bottom:10px">Dépenses variables · 6 mois</h3>
+    <svg viewBox="0 0 300 110" style="width:100%">
+    ${bars.map((b,i)=>{const bh=Math.max(4,b.v/max*72); const x=10+i*49;
+      return `<rect x="${x}" y="${86-bh}" width="34" height="${bh}" rx="9" fill="${b.cur?'url(#gb)':'var(--rose-soft)'}"/>
+      <text x="${x+17}" y="${80-bh}" text-anchor="middle" style="font:800 9px Nunito" fill="var(--ink2)">${b.v>0?Math.round(b.v):''}</text>
+      <text x="${x+17}" y="102" text-anchor="middle" style="font:800 10px Nunito" fill="${b.cur?'var(--rose)':'var(--ink2)'}">${b.label}</text>`;}).join('')}
+    <defs><linearGradient id="gb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#EE6FA8"/><stop offset="1" stop-color="#B79CED"/></linearGradient></defs></svg>`;
+}
+function nextChargeInfo(){
+  const today=new Date().getDate(), mk=monthKey();
+  const act=S.fixed.filter(f=>f.active);
+  if(!act.length) return null;
+  const up=act.filter(f=>f.day>=today && !(f.applied||[]).includes(mk)).sort((a,b)=>a.day-b.day)[0];
+  if(up) return {f:up, in:up.day-today};
+  const nx=act.slice().sort((a,b)=>a.day-b.day)[0];
+  const dim=new Date(new Date().getFullYear(),new Date().getMonth()+1,0).getDate();
+  return {f:nx, in:dim-today+nx.day};
+}
+function renderFixedList(){
+  const mk=monthKey(), tot=S.fixed.filter(f=>f.active).reduce((s,f)=>s+f.amount,0);
+  const list=S.fixed.slice().sort((a,b)=>a.day-b.day);
+  document.getElementById('fixed-list').innerHTML=(list.length?`
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+      <b>Total mensuel : ${fmt(tot)}</b>
+      <button class="btn small primary" onclick="openFixed()">+ ajouter</button></div>`:'')
+    +list.map(f=>{
+      const done=(f.applied||[]).includes(mk), today=new Date().getDate();
+      const badge=!f.active?'<span class="badge" style="background:var(--rose-soft);color:var(--ink2)">en pause 💤</span>'
+        : done?'<span class="badge" style="background:var(--menthe-soft);color:#1f7a5c">✓ prélevé</span>'
+        : `<span class="badge" style="background:var(--peche-soft);color:#b05a22">le ${f.day}${f.day>=today?' · J−'+(f.day-today):''}</span>`;
+      return `<div class="tx"><div class="ico" style="background:${done?'var(--menthe-soft)':'var(--rose-soft)'}">${cat(f.catId).icon}</div>
+      <div class="meta"><div class="t1">${f.name} ${badge}</div>
+      <div class="t2">${fmt(f.amount)} · ${bank(f.bankId).name}${f.end?' · fin '+f.end:''}</div></div>
+      <button class="close" style="float:none" onclick="toggleFixed('${f.id}')">${f.active?'⏸':'▶️'}</button>
+      <button class="close" style="float:none" onclick="delFixed('${f.id}')">✕</button></div>`;}).join('')
+    ||`<div class="empty"><span class="e">🔁</span>Ajoute tes charges fixes (loyer, abonnements…) : elles seront comptabilisées automatiquement chaque mois<br><br><button class="btn small primary" onclick="openFixed()">+ ma première charge fixe</button></div>`;
+}
 function renderBudgets(){
   const r=resteAVivre();
   document.getElementById('b-kpi').innerHTML=`
     <div class="k"><div class="v" style="color:var(--menthe)">${fmt(r.rev)}</div><div class="l">Revenus</div></div>
     <div class="k"><div class="v">${fmt(r.fix)}</div><div class="l">Fixes payées</div></div>
     <div class="k"><div class="v" style="color:var(--rose)">${fmt(r.spent)}</div><div class="l">Variables</div></div>`;
-  document.getElementById('b-gauges').innerHTML=S.cats.filter(c=>c.kind==='var').map(gaugeHTML).join('');
+  renderCatDonut(); renderHist(); renderFixedList();
+  document.getElementById('b-gauges').innerHTML=S.cats.filter(c=>c.kind==='var'&&(budgetOf(c)>0||spentByCat(c.id)>0)).map(gaugeHTML).join('')
+    ||'<div class="empty"><span class="e">🎯</span>Fixe tes budgets via « catégories »</div>';
   const hist=Object.entries(S.months).sort().reverse().slice(0,6);
   document.getElementById('b-history').innerHTML=hist.map(([m,d])=>
     `<div class="tx"><div class="ico" style="background:${d.kept?'var(--menthe-soft)':'#FDDDE4'}">${d.kept?'🏆':'💭'}</div>
@@ -622,11 +671,11 @@ function setSecu(){ const v=parseFloat(prompt('Objectif d\'épargne de sécurit�
 function etfTotals(){ const inv=S.etf.reduce((s,e)=>s+e.invested,0), val=S.etf.reduce((s,e)=>s+e.shares*e.price,0); return {inv,val,pl:val-inv,plPct:inv>0?(val-inv)/inv*100:0}; }
 function renderSecu(){
   const bal=balance('b5'), t=S.profile.securityTarget||0, p=t>0?Math.min(100,bal/t*100):0;
-  const pace=800; const left=Math.max(0,t-bal); const mLeft=left>0?Math.ceil(left/pace):0;
+  const pace=projDefaults().save; const left=Math.max(0,t-bal); const mLeft=(left>0&&pace>0)?Math.ceil(left/pace):0;
   document.getElementById('e-secu').innerHTML=`
-    <div style="display:flex;justify-content:space-between;font-weight:800"><span>🌱 Livret A</span><span>${Math.round(p)}%</span></div>
+    <div style="display:flex;justify-content:space-between;font-weight:800"><span>🌱 ${bank('b5').name}</span><span>${t>0?Math.round(p)+'%':''}</span></div>
     <div class="bar" style="margin-top:8px"><div class="fill ${p>=100?'ok':p>=50?'ok':'warn'}" style="width:${p}%"></div></div>
-    <div class="hint" style="font-size:12.5px;font-weight:700;color:var(--ink2);margin-top:8px">${fmt(bal)} / objectif ${fmt(t)}${left>0?` · à 800 €/mois, atteint dans ~${mLeft} mois 🗓️`:' · objectif atteint 🎉'}</div>`;
+    <div class="hint" style="font-size:12.5px;font-weight:700;color:var(--ink2);margin-top:8px">${fmt(bal)} / objectif ${fmt(t)}${left>0?(mLeft?` · à ${fmt(projDefaults().save)}/mois, atteint dans ~${mLeft} mois 🗓️`:''):' · objectif atteint 🎉'}</div>`;
 }
 function renderEtf(){
   const box=document.getElementById('e-cto');
@@ -654,16 +703,21 @@ function renderEtf(){
       <svg viewBox="0 0 100 100" style="width:96px;flex-shrink:0">${segs}</svg>
       <div class="legend" style="flex-direction:column;align-items:flex-start">${Object.entries(regions).map(([r,v])=>`<span><i style="background:${RC[r]||'#ccc'}"></i>${r} · ${T.val>0?Math.round(v/T.val*100):0}%</span>`).join('')}</div></div>`;
 }
+function projDefaults(){
+  const toSave=S.dispatch.flows.filter(f=>f.to==='b5').reduce((s,f)=>s+f.amount,0);
+  const toCto =S.dispatch.flows.filter(f=>f.to==='b3').reduce((s,f)=>s+f.amount,0);
+  return { save:S.profile.projSave??toSave, cto:S.profile.projCto??toCto };
+}
 function project(){
   const r=(S.profile.ctoRate||0)/100/12, lr=(S.profile.livretRate||0)/100/12;
+  const P=projDefaults();
   let liv=balance('b5'), cto=etfTotals().val;
-  const now=new Date(); const endCredit=new Date(2026,10,30); // nov. 2026
+  const frees=S.credits.filter(c=>c.remaining>0).map(c=>({after:c.remaining, m:c.monthly})); // fin de crédit → mensualité libérée vers l'épargne
   const pts=[{m:0,total:liv+cto}];
   for(let m=1;m<=60;m++){
-    const d=new Date(now.getFullYear(),now.getMonth()+m,1);
-    let apport=800 + (d>endCredit?171.88:0);   // crédit terminé → 171,88 € libérés vers l'épargne
-    liv=liv*(1+lr)+apport;
-    cto=cto*(1+r)+150;
+    const freed=frees.reduce((s,f)=>s+(m>f.after?f.m:0),0);
+    liv=liv*(1+lr)+P.save+freed;
+    cto=cto*(1+r)+P.cto;
     pts.push({m,total:liv+cto,liv,cto});
   }
   return pts;
@@ -673,7 +727,9 @@ function renderProj(){
   const max=Math.max(...pts.map(p=>p.total),1), min=Math.min(...pts.map(p=>p.total));
   const line=pts.map((p,i)=>`${(i/60)*300},${70-((p.total-min)/Math.max(1,max-min))*62-4}`).join(' ');
   document.getElementById('e-proj').innerHTML=`
-    <p style="font-size:12.5px;color:var(--ink2);font-weight:600">Basée sur ton rythme réel : <b>800 €/mois</b> Livret A (${S.profile.livretRate}%/an), <b>150 €/mois</b> CTO, et <b>+171,88 €/mois</b> libérés vers l'épargne dès la fin du crédit (déc. 2026).</p>
+    <p style="font-size:12.5px;color:var(--ink2);font-weight:600">Basée sur tes apports mensuels (pré-remplis depuis tes règles de dispatch, modifiables)${S.credits.some(c=>c.remaining>0)?' — et chaque crédit terminé libère automatiquement sa mensualité vers l\'épargne':''}.</p>
+    <div class="row"><div><label class="f">Épargne / mois (€)</label><input type="number" value="${projDefaults().save}" onchange="S.profile.projSave=parseFloat(this.value)||0;save();renderProj()"></div>
+    <div><label class="f">CTO / mois (€)</label><input type="number" value="${projDefaults().cto}" onchange="S.profile.projCto=parseFloat(this.value)||0;save();renderProj()"></div></div>
     <label class="f">Rendement annuel estimé du CTO : <b style="color:var(--rose)">${S.profile.ctoRate}%</b></label>
     <input type="range" min="0" max="12" step="0.5" value="${S.profile.ctoRate}" oninput="S.profile.ctoRate=parseFloat(this.value);save();renderProj()">
     <label class="f" style="margin-top:8px">Taux du Livret A (%/an)</label>
@@ -733,6 +789,7 @@ function envMove(id,dir){
 /* ── PLUS : crédits, wishlist, objectifs, zakat ── */
 function renderPlus(){
   document.getElementById('set-rate').value=S.profile.rate;
+  document.getElementById('set-name').value=S.profile.name||'';
   document.getElementById('p-credits').innerHTML=S.credits.map(cr=>{
     const paid=cr.total-cr.remaining, pct=cr.total>0?paid/cr.total*100:0;
     const sq=Array.from({length:cr.total},(_,i)=>`<div class="m ${i<paid?'done':''}"></div>`).join('');
@@ -916,6 +973,10 @@ function openRewind(){
     {tag:'ton taux d\'épargne', big:s.rate+'%', mid:fmt(s.toSavings)+' mis de côté (Livret A + CTO) sur '+fmt(s.rev)+' de revenus'},
     {tag:'ton jardin', big:'🌸 ×'+s.noSpend, mid:s.noSpend+' journée'+(s.noSpend>1?'s':'')+' sans aucune dépense — c\'est ça, la magie'},
     s.saved>0?{tag:'anti-impulsion', big:fmt(s.saved), mid:'économisés au total en résistant à tes envies wishlist 💪'}:null,
+    (()=>{const j=txMonth(monthKey()).filter(t=>t.mood==='joy').reduce((a,t)=>a+t.amount,0);
+          const rg=txMonth(monthKey()).filter(t=>t.mood==='regret').reduce((a,t)=>a+t.amount,0);
+          if(!j&&!rg) return null;
+          return {tag:'ton ressenti', big:rg<=j?'💖':'😔', mid:fmt(j)+' de dépenses plaisir assumées'+(rg>0?' · '+fmt(rg)+' de regrets — on apprend 🌷':' · zéro regret, bravo !')};})(),
   ].filter(Boolean);
   rwIdx=0; drawRewind(G);
 }
@@ -933,6 +994,10 @@ function rwPrev(){ if(rwIdx>0){rwIdx--; drawRewind();} }
 /* ── 💡 Moteur d'insights ── */
 function insights(){
   const out=[], mk=monthKey(), pmk=prevMonthKey();
+  const nc=nextChargeInfo();
+  if(nc) out.push({em:'📅', txt:`Prochain prélèvement : <b>${nc.f.name}</b> · ${fmt(nc.f.amount)} ${nc.in===0?'aujourd\'hui':'dans '+nc.in+' j'} (${bank(nc.f.bankId).name}).`});
+  const regret=txMonth(mk).filter(t=>t.mood==='regret').reduce((s,t)=>s+t.amount,0);
+  if(regret>0) out.push({em:'😔', txt:`<b>${fmt(regret)}</b> de dépenses marquées « regret » ce mois-ci. La wishlist 48h est ton amie 💝`});
   for(const c of S.cats.filter(c=>c.kind==='var')){
     const cur=spentByCat(c.id,mk), prev=spentByCat(c.id,pmk);
     if(prev>=20 && cur>prev*1.25) out.push({em:'📈', txt:`<b>${c.name}</b> grimpe : ${fmt(cur)} déjà, contre ${fmt(prev)} sur tout le mois dernier.`});
@@ -981,6 +1046,97 @@ function pinKey(k){
     else{ pinBuf=''; setTimeout(drawPin,220); toast('Code incorrect 🌷'); }
   }
 }
+/* ═════════════════════════ ASSISTANT DE DÉMARRAGE ═════════════════════════ */
+let obStep=0, obFixed=[];
+const OB_SUGGEST=[['🏠 Loyer','c_loyer'],['⚡ Élec & Gaz','c_energie'],['📶 Internet','c_net'],['📱 Téléphone','c_tel'],['🛡️ Assurance','c_assur'],['🚌 Transport','c_transp'],['📺 Abonnement','c_abo'],['🏛️ Crédit','c_credit'],['👩‍👧 Famille','c_famille']];
+function obDots(){ return '<div class="steps">'+[0,1,2,3,4,5].map(i=>`<i class="${i<=obStep?'on':''}"></i>`).join('')+'</div>'; }
+function startOnboard(){ obStep=0; obFixed=[]; document.getElementById('onboard').style.display='block'; obDraw(); }
+function obDraw(){
+  const el=document.getElementById('ob-inner');
+  if(obStep===0) el.innerHTML=obDots()+`
+    <div style="font-size:52px">🌸</div>
+    <h1>Bienvenue dans Rosée</h1>
+    <p class="sub">Ton assistante finances, 100% privée : tout reste sur ton téléphone. 2 petites minutes pour tout personnaliser.</p>
+    <label class="f">Comment t'appelles-tu ?</label>
+    <input id="ob-name" placeholder="Ton prénom" value="${S.profile.name||''}">
+    <button class="btn primary" style="margin-top:18px" onclick="S.profile.name=document.getElementById('ob-name').value.trim();save();obStep=1;obDraw()">Commencer ✨</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="obFinish(true)">Passer, je découvrirai seule</button>`;
+  if(obStep===1) el.innerHTML=obDots()+`
+    <h1>Tes banques 🏦</h1>
+    <p class="sub">Rosée s'organise autour de comptes aux rôles clairs. Renomme-les avec tes vraies banques et indique le solde actuel de chacun (tu pourras en ajouter ou en retirer plus tard).</p>
+    ${S.banks.map(b=>`<div class="row" style="margin-bottom:8px">
+      <input value="${b.name}" onchange="bank('${b.id}').name=this.value;save()">
+      <input type="number" placeholder="solde €" value="${S.initBal[b.id]||''}" onchange="S.initBal['${b.id}']=parseFloat(this.value)||0;save()" style="flex:0 0 110px"></div>`).join('')}
+    <button class="btn primary" style="margin-top:12px" onclick="obStep=2;obDraw()">Suivant →</button>`;
+  if(obStep===2) el.innerHTML=obDots()+`
+    <h1>Ton salaire 💼</h1>
+    <p class="sub">Il servira au dispatch automatique du jour de paie et au calcul du « vrai coût » en heures de travail.</p>
+    <label class="f">Salaire net mensuel (€)</label><input type="number" id="ob-sal" value="${S.dispatch.salary||''}">
+    <label class="f">Banque qui le reçoit</label><select id="ob-sbank">${bankOpts(S.dispatch.salaryBank)}</select>
+    <label class="f">Ton taux horaire net (€/h) — salaire ÷ heures travaillées</label><input type="number" id="ob-rate" step="0.5" value="${S.profile.rate||''}">
+    <button class="btn primary" style="margin-top:16px" onclick="
+      S.dispatch.salary=parseFloat(document.getElementById('ob-sal').value)||0;
+      S.dispatch.salaryBank=document.getElementById('ob-sbank').value;
+      S.profile.rate=parseFloat(document.getElementById('ob-rate').value)||S.profile.rate;
+      save();obStep=3;obDraw()">Suivant →</button>`;
+  if(obStep===3) el.innerHTML=obDots()+`
+    <h1>Tes charges fixes 🔁</h1>
+    <p class="sub">Loyer, factures, abonnements… Elles seront comptabilisées automatiquement chaque mois, à leur date. Touche une suggestion ou ajoute librement.</p>
+    <div class="chips">${OB_SUGGEST.map(([n,c],i)=>`<span class="chip-cat" onclick="obAddFixed('${n.replace(/'/g,"\\'")}','${c}')">${n}</span>`).join('')}</div>
+    <div id="ob-fx" style="margin-top:12px">${obFixedRows()}</div>
+    <button class="btn ghost" style="margin-top:8px" onclick="obAddFixed('✨ Autre charge','c_abo')">+ Autre charge</button>
+    <button class="btn primary" style="margin-top:12px" onclick="obSaveFixed();obStep=4;obDraw()">Suivant →</button>`;
+  if(obStep===4) el.innerHTML=obDots()+`
+    <h1>Tes budgets 🎯</h1>
+    <p class="sub">Combien veux-tu t'autoriser par mois et par catégorie ? Laisse à 0 celles que tu n'utilises pas — tout reste modifiable.</p>
+    ${S.cats.filter(c=>c.kind==='var').map(c=>`<div class="row" style="align-items:center;margin-bottom:8px">
+      <div style="flex:2;font-weight:800">${c.icon} ${c.name}</div>
+      <input type="number" placeholder="€/mois" value="${c.budget||''}" onchange="cat('${c.id}').budget=parseFloat(this.value)||0;save()"></div>`).join('')}
+    <button class="btn primary" style="margin-top:12px" onclick="obStep=5;obDraw()">Suivant →</button>`;
+  if(obStep===5){ const sb=S.dispatch.salaryBank;
+    el.innerHTML=obDots()+`
+    <h1>Ton plan d'épargne 🌱</h1>
+    <p class="sub">Le jour de paie, Rosée peut virer automatiquement une part de ton salaire vers l'épargne et l'investissement, puis répartir le reste. Indique tes montants (0 si pas concerné).</p>
+    <label class="f">Vers ${bank('b5').name} chaque mois (€)</label><input type="number" id="ob-fsave" value="0">
+    <label class="f">Vers ${bank('b3').name} chaque mois (€)</label><input type="number" id="ob-fcto" value="0">
+    <label class="f">Vers ${bank('b4').name} pour les dépenses variables (€)</label><input type="number" id="ob-fvar" value="0">
+    <p class="sub" style="margin-top:12px">💡 Tu pourras affiner ces flux et la ventilation de tes enveloppes à tout moment (carte « Jour de paie » → ⚙️).</p>
+    <button class="btn primary" style="margin-top:8px" onclick="obFlows()">C'est parti ! 🌸</button>`; }
+  window.scrollTo({top:0});
+}
+function obFixedRows(){
+  return obFixed.map((f,i)=>`<div class="card tight" style="margin-bottom:8px">
+    <div class="row"><input value="${f.name}" onchange="obFixed[${i}].name=this.value">
+    <input type="number" placeholder="€" value="${f.amount||''}" onchange="obFixed[${i}].amount=parseFloat(this.value)||0" style="flex:0 0 84px">
+    <input type="number" placeholder="jour" min="1" max="28" value="${f.day}" onchange="obFixed[${i}].day=Math.min(28,Math.max(1,parseInt(this.value)||1))" style="flex:0 0 70px">
+    <button class="close" style="float:none;align-self:center" onclick="obFixed.splice(${i},1);obDraw()">✕</button></div>
+    <select style="margin-top:6px" onchange="obFixed[${i}].bankId=this.value">${bankOpts(f.bankId)}</select>
+  </div>`).join('');
+}
+function obAddFixed(label,catId){
+  obFixed.push({name:label.replace(/^\p{Emoji}+\s*/u,''), amount:0, day:3, bankId:S.dispatch.salaryBank, catId});
+  obDraw();
+  setTimeout(()=>{const inps=document.querySelectorAll('#ob-fx input[type=number]'); if(inps.length) inps[inps.length-2]?.focus();},50);
+}
+function obSaveFixed(){
+  for(const f of obFixed) if(f.amount>0 && !S.fixed.some(x=>x.name===f.name))
+    S.fixed.push({id:uid(),name:f.name,amount:f.amount,bankId:f.bankId,catId:f.catId,day:f.day,applied:[],active:true});
+  save();
+}
+function obFlows(){
+  const sb=S.dispatch.salaryBank;
+  const add=(to,amount,label)=>{ if(amount>0) S.dispatch.flows.push({from:sb,to,amount,label}); };
+  add('b5',parseFloat(document.getElementById('ob-fsave').value)||0,'Épargne mensuelle');
+  add('b3',parseFloat(document.getElementById('ob-fcto').value)||0,'Investissement mensuel');
+  add('b4',parseFloat(document.getElementById('ob-fvar').value)||0,'Budget variable du mois');
+  obFinish();
+}
+function obFinish(skipped){
+  S.profile.onboarded=true; save();
+  document.getElementById('onboard').style.display='none';
+  applyFixedCharges(); render();
+  if(!skipped){ confetti(); toast('🌸 Rosée est prête, '+(S.profile.name||'toi')+' !'); }
+}
 /* ═════════════════════════ MODALES ═════════════════════════ */
 const bg=document.getElementById('modal-bg'), mod=document.getElementById('modal');
 function openModal(html){ mod.innerHTML=`<button class="close" onclick="closeModal()">✕</button>`+html; bg.classList.add('open'); }
@@ -1015,13 +1171,23 @@ function drawTxForm(pre={}){
     <label class="f">Note</label><input id="tx-note" placeholder="ex : provision épargne mensuelle">
     <label class="f">Date</label><input type="date" id="tx-date" value="${todayISO()}">`;
   } else {
-    f.innerHTML=`<label class="f">Montant (€)</label><input type="number" id="tx-amt" inputmode="decimal" placeholder="0,00" value="${pre.amount||''}">
+    const moods=txType==='dep'?`<label class="f">C'était… (optionnel)</label>
+    <div class="seg" id="tx-mood"><button data-m="need">😊 nécessaire</button><button data-m="joy">💖 plaisir</button><button data-m="regret">😔 regret</button></div>`:'';
+    f.innerHTML=`<label class="f">Montant (€)</label><input type="number" id="tx-amt" inputmode="decimal" placeholder="0,00" value="${pre.amount||''}">${''}
     <div class="row"><div><label class="f">Banque</label><select id="tx-bank">${bankOpts(txType==='rev'?'b1':'b4')}</select></div>
     <div><label class="f">Catégorie</label><select id="tx-cat">${catOpts(txType==='rev'?'rev':'dep')}</select></div></div>
     <label class="f">Note</label><input id="tx-note" placeholder="ex : courses Carrefour" value="${pre.note||''}">
+    ${moods}
     <label class="f">Date</label><input type="date" id="tx-date" value="${todayISO()}">`;
+    txMood=null;
+    document.getElementById('tx-mood')?.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+      const on=b.classList.contains('on');
+      document.getElementById('tx-mood').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+      if(!on){ b.classList.add('on'); txMood=b.dataset.m; } else txMood=null;
+    });
   }
 }
+let txMood=null;
 function saveTx(){
   const amt=parseFloat(document.getElementById('tx-amt').value);
   if(!amt||amt<=0) return toast('Indique un montant 🌷');
@@ -1029,7 +1195,7 @@ function saveTx(){
     bankId:document.getElementById('tx-bank').value, amount:amt, note:document.getElementById('tx-note').value.trim()};
   if(txType==='vir'){ t.toBankId=document.getElementById('tx-to').value;
     if(t.toBankId===t.bankId) return toast('Choisis deux banques différentes'); }
-  else t.catId=document.getElementById('tx-cat').value;
+  else { t.catId=document.getElementById('tx-cat').value; if(txType==='dep'&&txMood) t.mood=txMood; }
   S.tx.unshift(t);
   if(S.profile.roundup && txType==='dep'){
     const diff=+(Math.ceil(t.amount)-t.amount).toFixed(2);
@@ -1044,46 +1210,82 @@ function saveTx(){
   toast(txType==='vir'?'⤳ Flux enregistré':'Opération ajoutée ✨');
 }
 
-/* ── Jour de paie : dispatch automatique ── */
+/* ── Jour de paie : dispatch automatique (100% configurable) ── */
+function dispatchPreview(sal){
+  const delta={}; const add=(b,v)=>delta[b]=(delta[b]||0)+v;
+  add(S.dispatch.salaryBank, sal);
+  for(const f of S.dispatch.flows){ add(f.from,-f.amount); add(f.to,f.amount); }
+  for(const f of S.fixed.filter(f=>f.active)) add(f.bankId,-f.amount);
+  return delta; // ce qui restera de la paie sur chaque banque, une fois flux et fixes passés
+}
 function openDispatch(){
   const D=S.dispatch;
-  const envRows=S.envs.filter(e=>e.monthly>0).map(e=>`<div class="tx" style="padding:6px 2px"><div class="meta"><div class="t1">${e.icon} ${e.name}</div></div><div class="amt vir">+ ${fmt(e.monthly)}</div></div>`).join('');
   openModal(`<h2>💼 Dispatch du salaire</h2>
   <label class="f">Salaire net reçu (€) sur ${bank(D.salaryBank).name}</label>
-  <input type="number" id="dp-sal" value="${D.salary}" step="0.01">
-  <div class="card tight" style="margin-top:12px">
-    ${D.flows.map(f=>`<div class="tx" style="padding:6px 2px"><div class="meta"><div class="t1"><span class="flow-ribbon"><span class="b" style="background:${bank(f.from).g[1]}"></span>${bank(f.from).name.split(' ·')[0]} → <span class="b" style="background:${bank(f.to).g[1]}"></span>${bank(f.to).name.split(' ·')[0]}</span></div><div class="t2">${f.label}</div></div><div class="amt vir">⇄ ${fmt(f.amount)}</div></div>`).join('')}
-  </div>
-  <p style="font-size:12.5px;font-weight:800;margin:6px 0">Puis ventilation des enveloppes Revolut :</p>
-  <div class="card tight">${envRows}</div>
-  <p style="font-size:12px;color:var(--ink2);font-weight:600;margin-top:6px">Après flux et charges fixes, marges libres prévues : <b>≈ 119,60 € sur BNP</b> et <b>≈ 16,11 € sur Bourso</b> 🌿</p>
+  <input type="number" id="dp-sal" value="${D.salary||''}" step="0.01" oninput="renderDpPreview()">
+  ${D.flows.length?`<p style="font-size:12.5px;font-weight:800;margin:12px 0 4px">Flux automatiques :</p>
+  <div class="card tight">
+    ${D.flows.map(f=>`<div class="tx" style="padding:6px 2px"><div class="meta"><div class="t1"><span class="flow-ribbon"><span class="b" style="background:${bank(f.from).g[1]}"></span>${bank(f.from).name} → <span class="b" style="background:${bank(f.to).g[1]}"></span>${bank(f.to).name}</span></div><div class="t2">${f.label||'Virement'}</div></div><div class="amt vir">⇄ ${fmt(f.amount)}</div></div>`).join('')}
+  </div>`:''}
+  ${S.envs.filter(e=>!e.reward).length?`<p style="font-size:12.5px;font-weight:800;margin:10px 0 4px">Ventilation des enveloppes <span style="color:var(--ink2)">(modifiable ici ✎)</span> :</p>
+  <div class="card tight">
+    ${S.envs.filter(e=>!e.reward).map(e=>`<div class="tx" style="padding:6px 2px"><div class="meta"><div class="t1">${e.icon} ${e.name}</div></div>
+    <input type="number" value="${e.monthly||0}" step="1" style="width:92px;padding:8px 10px" onchange="setEnvMonthlyVal('${e.id}',this.value)"></div>`).join('')}
+    <div class="tx" style="padding:6px 2px"><div class="meta"><div class="t1" style="color:var(--ink2)">Total ventilé</div></div><div class="amt vir" id="dp-envtot"></div></div>
+  </div>`:''}
+  <div id="dp-preview" style="margin-top:8px"></div>
   <button class="btn primary" style="margin-top:12px" onclick="runDispatch()">Tout dispatcher ✨</button>
-  <button class="btn ghost" style="margin-top:8px" onclick="editDispatch()">Modifier les règles de flux</button>`);
+  <button class="btn ghost" style="margin-top:8px" onclick="editDispatch()">⚙️ Modifier les règles (flux, salaire)</button>`);
+  renderDpPreview();
+}
+function setEnvMonthlyVal(id,v){ const e=S.envs.find(x=>x.id===id); e.monthly=Math.max(0,parseFloat(v)||0); save(); renderDpPreview(); }
+function renderDpPreview(){
+  const el=document.getElementById('dp-preview'); if(!el) return;
+  const sal=parseFloat(document.getElementById('dp-sal')?.value)||0;
+  const tot=S.envs.filter(e=>!e.reward).reduce((s,e)=>s+(e.monthly||0),0);
+  const et=document.getElementById('dp-envtot'); if(et) et.textContent='+ '+fmt(tot);
+  if(!sal){ el.innerHTML=''; return; }
+  const d=dispatchPreview(sal);
+  el.innerHTML=`<p style="font-size:12.5px;font-weight:800;margin:4px 0 6px">Après flux et charges fixes, il restera :</p>
+  <div class="card tight">${Object.entries(d).filter(([,v])=>Math.abs(v)>=0.01).map(([b,v])=>
+    `<div class="tx" style="padding:5px 2px"><div class="ico" style="background:${bank(b).g[1]}22;font-size:15px">${bank(b).icon}</div>
+     <div class="meta"><div class="t1">${bank(b).name}</div></div>
+     <div class="amt ${v<0?'neg':'pos'}" style="color:${v<0?'var(--alerte)':''}">${v>=0?'+':''} ${fmt(v)}</div></div>`).join('')}</div>
+  ${Object.values(d).some(v=>v<-0.01)?'<span class="pill danger">⚠️ Une banque passerait en négatif : ajuste tes flux</span>':'<span class="pill ok">Plan équilibré 🌿</span>'}`;
 }
 function runDispatch(){
   const mk=monthKey(), D=S.dispatch;
   if((D.applied||[]).includes(mk)){ closeModal(); return toast('Salaire déjà dispatché ce mois-ci 🌷'); }
-  const sal=parseFloat(document.getElementById('dp-sal').value)||D.salary;
+  const sal=parseFloat(document.getElementById('dp-sal').value)||0;
+  if(!sal) return toast('Indique ton salaire 🌷');
+  D.salary=sal;
   S.tx.unshift({id:uid(),date:todayISO(),type:'rev',bankId:D.salaryBank,catId:'c_salaire',amount:sal,note:'Salaire (dispatch auto)'});
-  for(const f of D.flows) S.tx.unshift({id:uid(),date:todayISO(),type:'vir',bankId:f.from,toBankId:f.to,amount:f.amount,note:f.label+' (auto)'});
-  for(const e of S.envs) if(e.monthly>0) e.saved+=e.monthly;
+  for(const f of D.flows) if(f.amount>0) S.tx.unshift({id:uid(),date:todayISO(),type:'vir',bankId:f.from,toBankId:f.to,amount:f.amount,note:(f.label||'Flux')+' (auto)'});
+  let nEnv=0;
+  for(const e of S.envs) if(!e.reward&&e.monthly>0){ e.saved+=e.monthly; nEnv++; }
   D.applied=D.applied||[]; D.applied.push(mk);
   S.tx.sort((a,b)=>b.date.localeCompare(a.date));
   save(); closeModal(); render(); confetti();
-  toast('💼 Salaire réparti : 4 flux + '+S.envs.filter(e=>e.monthly>0).length+' enveloppes provisionnées');
+  toast(`💼 Salaire réparti : ${D.flows.length} flux + ${nEnv} enveloppe${nEnv>1?'s':''} provisionnée${nEnv>1?'s':''}`);
 }
 function editDispatch(){
   const D=S.dispatch;
-  openModal(`<h2>Règles de dispatch</h2>
-  <label class="f">Salaire mensuel (€)</label><input type="number" id="ed-sal" value="${D.salary}" step="0.01">
-  ${D.flows.map((f,i)=>`<label class="f">${f.label}</label>
-    <div class="row"><select onchange="S.dispatch.flows[${i}].from=this.value;save()">${bankOpts(f.from)}</select>
-    <select onchange="S.dispatch.flows[${i}].to=this.value;save()">${bankOpts(f.to)}</select>
-    <input type="number" value="${f.amount}" step="0.01" onchange="S.dispatch.flows[${i}].amount=parseFloat(this.value)||0;save()"></div>`).join('')}
-  <p style="font-size:12px;color:var(--ink2);font-weight:600;margin-top:10px">Les montants mensuels des enveloppes se règlent sur chaque enveloppe (onglet Épargne).</p>
-  <button class="btn primary" style="margin-top:12px" onclick="S.dispatch.salary=parseFloat(document.getElementById('ed-sal').value)||S.dispatch.salary;save();closeModal();render();toast('Règles mises à jour ✓')">Enregistrer</button>`);
+  openModal(`<h2>⚙️ Règles de dispatch</h2>
+  <label class="f">Salaire mensuel habituel (€)</label><input type="number" id="ed-sal" value="${D.salary||''}" step="0.01">
+  <label class="f">Banque qui reçoit le salaire</label><select id="ed-bank" onchange="S.dispatch.salaryBank=this.value;save()">${bankOpts(D.salaryBank)}</select>
+  <p style="font-size:12.5px;font-weight:800;margin:14px 0 2px">Flux automatiques le jour de paie :</p>
+  <div id="ed-flows">${D.flows.map((f,i)=>`
+    <div class="card tight" style="margin-bottom:8px">
+      <input value="${f.label||''}" placeholder="libellé (ex : épargne mensuelle)" onchange="S.dispatch.flows[${i}].label=this.value;save()" style="margin-bottom:6px">
+      <div class="row"><select onchange="S.dispatch.flows[${i}].from=this.value;save()">${bankOpts(f.from)}</select>
+      <select onchange="S.dispatch.flows[${i}].to=this.value;save()">${bankOpts(f.to)}</select>
+      <input type="number" value="${f.amount}" step="0.01" onchange="S.dispatch.flows[${i}].amount=parseFloat(this.value)||0;save()">
+      <button class="close" style="float:none;align-self:center" onclick="S.dispatch.flows.splice(${i},1);save();editDispatch()">✕</button></div>
+    </div>`).join('')||'<p style="font-size:12.5px;color:var(--ink2);font-weight:600">Aucun flux : ajoute par exemple « vers Épargne » ou « vers Dépenses variables ».</p>'}</div>
+  <button class="btn ghost" onclick="S.dispatch.flows.push({from:S.dispatch.salaryBank,to:'b5',amount:0,label:''});save();editDispatch()">+ Ajouter un flux</button>
+  <button class="btn primary" style="margin-top:12px" onclick="S.dispatch.salary=parseFloat(document.getElementById('ed-sal').value)||0;save();closeModal();render();toast('Règles mises à jour ✓')">Enregistrer</button>`);
 }
-/* ── ETF ── */
+/* ── ETF ── *//* ── ETF ── */
 function openEtf(id){
   const e=S.etf.find(x=>x.id===id)||{name:'',region:'Monde',shares:'',invested:'',price:''};
   openModal(`<h2>${id?'Modifier':'Nouvel'} ETF 📊</h2>
@@ -1329,6 +1531,7 @@ function confetti(){
 applyFixedCharges();
 applyPrefs();
 if(S.profile.pin) showLock();
+if(!S.profile.onboarded) startOnboard();
 render();
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
